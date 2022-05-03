@@ -50,19 +50,22 @@ class CamHandler:
             self.cam.destroy()
             self.cam = None
         if 0 <= ind < len(self.harvester.device_info_list):
-            self.cam = self.harvester.create_image_acquirer(ind)
-            self.cam.num_buffers = 20
-            self.cam.remote_device.node_map.InterPacketDelay.value = 256
-            format = self.cam.remote_device.node_map.PixelFormat.value
-            if format == "RGB8":
-                self.color = True
-            else:
-                self.color = False
+            try:
+                self.cam = self.harvester.create_image_acquirer(ind)
+                self.cam.num_buffers = 6
+                self.cam.remote_device.node_map.PacketSize.value = 'Size2960'
+                format = self.cam.remote_device.node_map.PixelFormat.value
+                if format == "RGB8":
+                    self.color = True
+                else:
+                    self.color = False
+            except genicam.gentl.AccessDeniedException:
+                self.cam = None
 
     def acquireImag(self):
         if self.cam.is_acquiring():
             try:
-                buffer = self.cam.fetch_buffer(timeout=0.05)
+                buffer = self.cam.fetch_buffer(timeout=0.1)
                 buffimag = buffer.payload.components[0]
                 tstamp = buffer.timestamp
                 if not self.sync:
