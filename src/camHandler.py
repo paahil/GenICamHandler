@@ -51,7 +51,8 @@ class CamHandler:
             self.cam = None
         if 0 <= ind < len(self.harvester.device_info_list):
             self.cam = self.harvester.create_image_acquirer(ind)
-            self.cam.num_buffers = 25
+            self.cam.num_buffers = 20
+            self.cam.remote_device.node_map.InterPacketDelay.value = 256
             format = self.cam.remote_device.node_map.PixelFormat.value
             if format == "RGB8":
                 self.color = True
