@@ -1,20 +1,35 @@
 import math
-
 import cv2 as cv
 from harvesters.core import Harvester
 import genicam.gentl
+import genicam.genapi
 import time
 import datetime
 import numpy
 import os
-from filterConfig import FilterConfig
 
+colorforms = ["BayerRG8"]
+pcktsizes = [1440, 2960, 4480, 6000, 7520, 9040, 10560]
 
 class CamHandler:
     def __init__(self):
+        self.errlog = None
+        self.logfname = None
         self.cam = None
-        self.locator = None
+        self.camprops = None
         self.savepth = None
+        self.thrsh = 0
+        self.bufnum = 6
+        self.partw = 256
+        self.parth = 256
+        self.offsetx = 900
+        self.offsety = 900
+        self.defH = 0
+        self.defW = 0
+        self.defOffX = 0
+        self.defOffY = 0
+
+        self.partial = False
         self.triggering = False
         self.acquire = False
         self.filtering = False
@@ -23,44 +38,126 @@ class CamHandler:
         self.systime0 = None
         self.tstamp0 = 0
         self.sync = False
+
         self.harvester = Harvester()
         self.harvester.add_file("C:\\Users\\Paavo\\Documents\\ADENN2021\\MATRIX VISION\\bin\\x64\\mvGenTLProducer.cti")
-        self.filtcfg = FilterConfig()
-        self.filtcfg.load()
         self.load()
+        self.openerrlog()
 
     def load(self):
         try:
-            file = open('handler.cfgh', 'r')
-            self.savepth = file.readline()
+            file = open('cfgs/default.cfgh', 'r')
+            self.savepth = file.readline()[:-1]
             if self.savepth == 'None':
                 self.savepth = None
+            self.bufnum = int(file.readline())
+            self.thrsh = int(file.readline())
+            self.partw = int(file.readline())
+            self.parth = int(file.readline())
+            self.offsetx = int(file.readline())
+            self.offsety = int(file.readline())
             file.close()
         except FileNotFoundError:
             pass
 
     def save(self):
-        file = open('handler.cfgh', 'w')
-        file.write('{0}'.format(self.savepth))
+        file = open('cfgs/default.cfgh', 'w')
+        file.write('%s\n' % self.savepth)
+        file.write('%d\n' % self.bufnum)
+        file.write('%d\n' % self.thrsh)
+        file.write('%d\n' % self.partw)
+        file.write('%d\n' % self.parth)
+        file.write('%d\n' % self.offsetx)
+        file.write('%d\n' % self.offsety)
         file.close()
+
+    def loadCameraProperties(self):
+        if self.camprops is not None:
+            try:
+                self.camprops.get_node("UserSetSelector").value = "UserSet1"
+                self.camprops.get_node("UserSetLoad").execute()
+            except genicam.genapi.LogicalErrorException:
+                try:
+                    self.camprops.get_node("MemoryChannel").value = 1
+                    self.camprops.get_node("LoadParameters").value = 'CameraParameters'
+                    self.camprops.get_node("LoadParameters").value = 'CommonParameters'
+                except genicam.genapi.LogicalErrorException:
+                    pass
+
+    def saveCameraProperties(self):
+        if self.camprops is not None:
+            try:
+                self.camprops.get_node("UserSetSelector").value = "UserSet1"
+                self.camprops.get_node("UserSetSave").execute()
+            except genicam.genapi.LogicalErrorException:
+                try:
+                    self.camprops.get_node("MemoryChannel").value = 1
+                    self.camprops.get_node("SaveParameters").value = 'CameraParameters'
+                    self.camprops.get_node("SaveParameters").value = 'CommonParameters'
+                except genicam.genapi.LogicalErrorException:
+                    pass
+
+    def initCamera(self):
+        if self.camprops is not None:
+            try:
+                self.camprops.get_node("AutoGain").value = 'OFF'
+                self.camprops.get_node("Binning").value = 'OFF'
+            except genicam.genapi.LogicalErrorException:
+                try:
+                    self.camprops.get_node("GainAuto").value = "Off"
+                    self.camprops.get_node("ExposureAuto").value = "Off"
+                    self.camprops.get_node("BalanceWhiteAuto").value = "Off"
+                except genicam.genapi.LogicalErrorException:
+                    pass
+
+    def openerrlog(self):
+        if not os.path.exists(os.path.join(os.getcwd(), 'logs')):
+            os.mkdir('logs')
+        self.logfname = "logs/CamHandlerERRORLog_%s.txt" % datetime.datetime.now().strftime("%Y-%m-%d_%H;%M;%S")
+        self.errlog = open(self.logfname, 'w')
+
+    def closeerrlog(self):
+        self.errlog.close()
+        if os.path.getsize(self.logfname) == 0:
+            os.remove(self.logfname)
+
+    def logerror(self, message):
+        tstamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+        self.errlog.write("{0} ERROR: ".format(tstamp) + message + '\n')
 
     def changeCam(self, ind):
         if self.cam is not None:
             self.cam.stop_acquisition()
+            self.saveCameraProperties()
             self.cam.destroy()
             self.cam = None
+            self.camprops = None
         if 0 <= ind < len(self.harvester.device_info_list):
             try:
                 self.cam = self.harvester.create_image_acquirer(ind)
-                self.cam.num_buffers = 6
-                self.cam.remote_device.node_map.PacketSize.value = 'Size2960'
-                format = self.cam.remote_device.node_map.PixelFormat.value
-                if format == "RGB8":
-                    self.color = True
-                else:
-                    self.color = False
+                self.camprops = self.cam.remote_device.node_map
+                self.loadCameraProperties()
+                self.initCamera()
+                self.cam.num_buffers = self.bufnum
+                self.defH = self.getProperty("Height")
+                self.defW = self.getProperty("Width")
+                self.defOffX = self.getProperty("OffsetX")
+                self.defOffY = self.getProperty("OffsetY")
+                for test in ["Trigger", "TriggerMode"]:  # Some manufacturers use different naming
+                    try:
+                        for val in self.camprops.get_node(test).symbolics:
+                            if val.upper() == "OFF":  # Some manufacturers use Off/On and some use OFF/ON
+                                self.camprops.get_node(test).value = val
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+                self.color = False
+                for pixform in self.camprops.PixelFormat.symbolics:
+                    if pixform in colorforms:
+                        self.color = True
             except genicam.gentl.AccessDeniedException:
                 self.cam = None
+                self.camprops = None
 
     def acquireImag(self):
         if self.cam.is_acquiring():
@@ -72,64 +169,231 @@ class CamHandler:
                     self.synctimestamp(tstamp)
                 syststamp = self.getsystimestamp(tstamp)
                 arr = numpy.ndarray.copy(buffimag.data.reshape(buffimag.height, buffimag.width))
+                if self.camprops.PixelFormat.value == colorforms[0]:  # Is Bayer RG8
+                    arr = cv.cvtColor(arr, cv.COLOR_BayerRGGB2RGB)
                 buffer.queue()
                 return arr, syststamp
             except genicam.gentl.TimeoutException:
                 pass
         return None, 0
 
+    def getProperty(self, prop):
+        ret = None
+        if self.camprops is not None:
+            if prop == "Width":
+                ret = self.camprops.get_node("Width").value
+            elif prop == "Height":
+                ret = self.camprops.get_node("Height").value
+            elif prop == "MaxWidth":
+                ret = self.camprops.get_node("Width").max
+            elif prop == "MaxHeight":
+                ret = self.camprops.get_node("Height").max
+            elif prop == "MinWidth":
+                ret = self.camprops.get_node("Width").min
+            elif prop == "MinHeight":
+                ret = self.camprops.get_node("Height").min
+            elif prop == "OffsetX":
+                ret = self.camprops.get_node("OffsetX").value
+            elif prop == "OffsetY":
+                ret = self.camprops.get_node("OffsetY").value
+            elif prop == "PixelFormat":
+                ret = self.camprops.get_node("PixelFormat").value
+            elif prop == "MaxFPS":
+                for test in ["FrameRate", "ResultingFrameRateAbs"]:
+                    try:
+                        ret = self.camprops.get_node(test).value
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+            elif prop == "PacketInterval":
+                    try:
+                        ret = self.camprops.get_node("InterPacketDelay").value
+                    except genicam.genapi.LogicalErrorException:
+                        try:
+                            ret = self.camprops.get_node("GevSCPD").value/self.camprops.get_node("GevTimestampTickFrequency")
+                            ret = round(1000000*ret)
+                        except genicam.genapi.LogicalErrorException:
+                            pass
+            elif prop == "MinPacketInterval":
+                try:
+                    ret = self.camprops.get_node("InterPacketDelay").min
+                except genicam.genapi.LogicalErrorException:
+                    try:
+                        ret = self.camprops.get_node("GevSCPD").min / self.camprops.get_node(
+                            "GevTimestampTickFrequency")
+                        ret = round(1000000 * ret)
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+            elif prop == "MaxPacketInterval":
+                try:
+                    ret = self.camprops.get_node("InterPacketDelay").max
+                except genicam.genapi.LogicalErrorException:
+                    try:
+                        ret = self.camprops.get_node("GevSCPD").max / self.camprops.get_node(
+                            "GevTimestampTickFrequency")
+                        ret = round(1000000 * ret)
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+            elif prop == "PacketSize":
+                try:
+                    val = pcktsizes[0]
+                    try:
+                        val = self.camprops.get_node("PacketSize").value
+                        val = int(val[4:])
+                    except genicam.genapi.PropertyException:
+                        pass
+                    for i in range(len(pcktsizes)):
+                        if val == pcktsizes[i]:
+                            ret = i
+                except genicam.genapi.LogicalErrorException:
+                    try:
+                        val = self.camprops.get_node("GevSCPSPacketSize").value
+                        for i in range(len(pcktsizes)):
+                            if val == pcktsizes[i]:
+                                ret = i
+                        if ret is None:
+                            self.camprops.get_node("GevSCPSPacketSize").value = pcktsizes[0]
+                            ret = 0
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+            elif prop == "Gain":
+                gainsc = [0.0358, 0.1]
+                ind = 0
+                for test in ["Gain_L", "GainRaw"]:
+                    try:
+                        ret = self.camprops.get_node(test).value*gainsc[ind]
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        ind = ind + 1
+            elif prop == "MaxGain":
+                gainsc = [0.0358, 0.1]
+                ind = 0
+                for test in ["Gain_L", "GainRaw"]:
+                    try:
+                        ret = self.camprops.get_node(test).max*gainsc[ind]
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        ind = ind + 1
+            elif prop == "ExposureTime":
+                for test in ["Shutter", "ExposureTimeAbs"]:
+                    try:
+                        ret = self.camprops.get_node(test).value
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+            elif prop == "MinExposureTime":
+                for test in ["Shutter", "ExposureTimeAbs"]:
+                    try:
+                        ret = self.camprops.get_node(test).min
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+            elif prop == "MaxExposureTime":
+                for test in ["Shutter", "ExposureTimeAbs"]:
+                    try:
+                        ret = self.camprops.get_node(test).max
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+        return ret
+
+    def setProperty(self, prop, val=None):
+        if self.camprops is not None:
+            if prop == "Width":
+                self.camprops.get_node("Width").value = val
+            elif prop == "Height":
+                self.camprops.get_node("Height").value = val
+            elif prop == "PixelFormat":
+                self.camprops.get_node("PixelFormat").value = val
+            elif prop == "OffsetX":
+                self.camprops.get_node("OffsetX").value = val
+            elif prop == "OffsetY":
+                self.camprops.get_node("OffsetY").value = val
+            elif prop == "PacketSize":
+                try:
+                    self.camprops.get_node("PacketSize").value = "Size"+str(pcktsizes[val])
+                except genicam.genapi.LogicalErrorException:
+                    try:
+                        self.camprops.get_node("GevSCPSPacketSize").value = pcktsizes[val]
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+            elif prop == "PacketInterval":
+                try:
+                    ret = self.camprops.get_node("InterPacketDelay").value
+                except genicam.genapi.LogicalErrorException:
+                    try:
+                        self.camprops.get_node("GevSCPD").value = round((val/1000) * self.camprops.get_node(
+                            "GevTimestampTickFrequency"))
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+            elif prop == "Gain":
+                gainsc = [0.0358, 0.1]
+                ind = 0
+                for test in ["Gain_L", "GainRaw"]:
+                    try:
+                        self.camprops.get_node(test).value = int(val/gainsc[ind])
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        ind = ind + 1
+
+            elif prop == "ExposureTime":
+                for test in ["Shutter", "ExposureTimeAbs"]:
+                    try:
+                        self.camprops.get_node(test).value = val
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+
+
+    def togglePartial(self):
+        if self.partial:
+            self.setProperty("OffsetX", self.defOffX)
+            self.setProperty("OffsetY", self.defOffY)
+            self.setProperty("Width", self.defW)
+            self.setProperty("Height", self.defH)
+            self.partial = False
+        else:
+            self.setProperty("Width", self.partw)
+            self.setProperty("Height", self.parth)
+            self.setProperty("OffsetX", self.offsetx)
+            self.setProperty("OffsetY", self.offsety)
+            self.partial = True
 
     def toggleTrigger(self):
-        if self.triggering:
-            self.triggering = False
-            self.cam.remote_device.node_map.Trigger.value = 'OFF'
-        else:
-            self.triggering = True
-            self.cam.remote_device.node_map.Trigger.value = 'ON'
-
-
-    def getChannel(self, img, channum):
-        r, b, g = cv.split(img)
-        if channum == 1:
-            return r
-        elif channum == 2:
-            return b
-        elif channum == 3:
-            return g
-        else:
-            return img
-
-    def filtImag(self, frame, channel):
-        if self.color:
-            if 0 < channel < 4:
-                frame = self.getChannel(frame, channel)
+        if self.cam is not None:
+            if self.triggering:
+                self.triggering = False
+                for test in ["Trigger", "TriggerMode"]:  # Some manufacturers use different naming
+                    try:
+                        for val in self.camprops.get_node(test).symbolics:
+                            if val.upper() == "OFF":  # Some manufacturers use Off/On and some use OFF/ON
+                                self.camprops.get_node(test).value = val
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        pass
             else:
-                return self.filtRGB(frame)
-        filterc = self.filtcfg
-        start = time.time()
-        if self.filtering:
-            if filterc.filt == 1:
-                frame = cv.blur(frame, (filterc.filtw, filterc.filth))
-            elif filterc.filt == 2:
-                frame = cv.GaussianBlur(frame, (filterc.filtw, filterc.filth), 0)
-            elif filterc.filt == 3:
-                frame = cv.medianBlur(frame, filterc.filtw)
-            frame = cv.convertScaleAbs(frame, alpha=filterc.alpha,
-                                       beta=filterc.beta)  # Change contrast with linear multiplication
-        bw = cv.threshold(frame, filterc.binthr, 255, cv.THRESH_TOZERO)[1]  # Binarize the image
-        stop = time.time()
-        # print('Time elapsed for drawImag: {0:1.4f}'.format(stop-start))
-        return frame, bw
+                self.triggering = True
+                for test in ["Trigger", "TriggerMode"]:  # Some manufacturers use different naming
+                    try:
+                        for val in self.camprops.get_node(test).symbolics:
+                            if val.upper() == "ON":  # Some manufacturers use Off/On and some use OFF/ON
+                                self.camprops.get_node(test).value = val
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        pass
 
-    def filtRGB(self, frame):
-        r = self.filtImag(frame, 1)
-        g = self.filtImag(frame, 2)
-        b = self.filtImag(frame, 3)
-        return cv.merge([r, g, b])
+    def changeBufnum(self, val):
+        if self.cam is not None:
+            self.bufnum = val
+            self.cam.num_buffers = self.bufnum
+
+    def filtImag(self, frame):
+        if self.filtering:
+            frame = cv.threshold(frame, self.thrsh, 255, cv.THRESH_TOZERO)[1]  # Threshold the image
+        return frame
 
     def saveImag(self, bw, timestamp):
         if self.saving:
-            bw = self.savesize(bw, bw.shape[0])
             if self.savepth is None:
                 cv.imwrite(timestamp + '.jpg', bw)
             else:
@@ -142,12 +406,6 @@ class CamHandler:
             return True
         else:
             return False
-
-    def savesize(self, src, height):
-        return cv.resize(src, (round((4 / 3) * height), height))
-
-    def previewsize(self, src, width, height):
-        return cv.resize(src, (width, height))
 
     def synctimestamp(self, tstamp0):
         self.systime0 = datetime.datetime.now()
