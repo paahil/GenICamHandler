@@ -206,33 +206,21 @@ class CamHandler:
                     except genicam.genapi.LogicalErrorException:
                         pass
             elif prop == "PacketInterval":
+                for test in ["InterPacketDelay", "GevSCPD"]:
                     try:
-                        ret = self.camprops.get_node("InterPacketDelay").value
+                        ret = self.camprops.get_node(test).value
                     except genicam.genapi.LogicalErrorException:
-                        try:
-                            ret = self.camprops.get_node("GevSCPD").value/self.camprops.get_node(
-                                "GevTimestampTickFrequency").value
-                            ret = round(1000000*ret)
-                        except genicam.genapi.LogicalErrorException:
-                            pass
+                        pass
             elif prop == "MinPacketInterval":
-                try:
-                    ret = self.camprops.get_node("InterPacketDelay").min
-                except genicam.genapi.LogicalErrorException:
+                for test in ["InterPacketDelay", "GevSCPD"]:
                     try:
-                        ret = self.camprops.get_node("GevSCPD").min / self.camprops.get_node(
-                            "GevTimestampTickFrequency").value
-                        ret = round(1000000 * ret)
+                        ret = self.camprops.get_node(test).min
                     except genicam.genapi.LogicalErrorException:
                         pass
             elif prop == "MaxPacketInterval":
-                try:
-                    ret = self.camprops.get_node("InterPacketDelay").max
-                except genicam.genapi.LogicalErrorException:
+                for test in ["InterPacketDelay", "GevSCPD"]:
                     try:
-                        ret = self.camprops.get_node("GevSCPD").max / self.camprops.get_node(
-                            "GevTimestampTickFrequency").value
-                        ret = round(1000000 * ret)
+                        ret = self.camprops.get_node(test).max
                     except genicam.genapi.LogicalErrorException:
                         pass
             elif prop == "PacketSize":
@@ -319,12 +307,9 @@ class CamHandler:
                     except genicam.genapi.LogicalErrorException:
                         pass
             elif prop == "PacketInterval":
-                try:
-                    self.camprops.get_node("InterPacketDelay").value = val
-                except genicam.genapi.LogicalErrorException:
+                for test in ["InterPacketDelay", "GevSCPD"]:
                     try:
-                        self.camprops.get_node("GevSCPD").value = round((val/1000000) * self.camprops.get_node(
-                            "GevTimestampTickFrequency").value)
+                        self.camprops.get_node(test).value = val
                     except genicam.genapi.LogicalErrorException:
                         pass
             elif prop == "Gain":

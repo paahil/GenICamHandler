@@ -297,7 +297,7 @@ class GUI(QtW.QMainWindow):
         self.packetSizeG.currentIndexChanged.connect(self.changePcktSize)
         self.connproplout.addWidget(self.packetSizeG, 1, 2)
 
-        self.connproplout.addWidget(QtW.QLabel("Packet Interval (µs)"), 2, 1)
+        self.connproplout.addWidget(QtW.QLabel("Packet Interval (ticks)"), 2, 1)
         self.packetIntervalG.valueChanged.connect(self.changePcktInterval)
         self.connproplout.addWidget(self.packetIntervalG, 2, 2)
 
