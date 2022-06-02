@@ -17,10 +17,18 @@ class ImageThread(QtC.QThread):
     def run(self):
         self.camHand.cam.start_acquisition()
         while self.camHand.acquire:
-            arr,tstamp = self.camHand.acquireImag()
+            arr, tstamp = self.camHand.acquireImag()
             if arr is not None:
                 self.imageAcquired.emit(arr, tstamp)
-        self.camHand.cam.stop_acquisition()
+        retry = 0
+        while retry < 100:
+            try:
+                self.camHand.cam.stop_acquisition()
+                break
+            except genicam.genapi.AccessException:
+                retry = retry + 1
+                time.sleep(0.1)
+
 
 class SaveThread(QtC.QThread):
     imageSaved = QtC.pyqtSignal()
