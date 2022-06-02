@@ -210,7 +210,8 @@ class CamHandler:
                         ret = self.camprops.get_node("InterPacketDelay").value
                     except genicam.genapi.LogicalErrorException:
                         try:
-                            ret = self.camprops.get_node("GevSCPD").value/self.camprops.get_node("GevTimestampTickFrequency")
+                            ret = self.camprops.get_node("GevSCPD").value/self.camprops.get_node(
+                                "GevTimestampTickFrequency").value
                             ret = round(1000000*ret)
                         except genicam.genapi.LogicalErrorException:
                             pass
@@ -220,7 +221,7 @@ class CamHandler:
                 except genicam.genapi.LogicalErrorException:
                     try:
                         ret = self.camprops.get_node("GevSCPD").min / self.camprops.get_node(
-                            "GevTimestampTickFrequency")
+                            "GevTimestampTickFrequency").value
                         ret = round(1000000 * ret)
                     except genicam.genapi.LogicalErrorException:
                         pass
@@ -230,7 +231,7 @@ class CamHandler:
                 except genicam.genapi.LogicalErrorException:
                     try:
                         ret = self.camprops.get_node("GevSCPD").max / self.camprops.get_node(
-                            "GevTimestampTickFrequency")
+                            "GevTimestampTickFrequency").value
                         ret = round(1000000 * ret)
                     except genicam.genapi.LogicalErrorException:
                         pass
@@ -322,8 +323,8 @@ class CamHandler:
                     ret = self.camprops.get_node("InterPacketDelay").value
                 except genicam.genapi.LogicalErrorException:
                     try:
-                        self.camprops.get_node("GevSCPD").value = round((val/1000) * self.camprops.get_node(
-                            "GevTimestampTickFrequency"))
+                        self.camprops.get_node("GevSCPD").value = round((val/1000000) * self.camprops.get_node(
+                            "GevTimestampTickFrequency").value)
                     except genicam.genapi.LogicalErrorException:
                         pass
             elif prop == "Gain":
