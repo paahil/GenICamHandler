@@ -2,7 +2,7 @@ import PyQt5.QtWidgets as QtW
 import PyQt5.QtCore as QtC
 import PyQt5.QtGui as QtG
 from camHandler import CamHandler, pcktsizes
-import genicam.genapi
+from genicam import genapi, gentl
 import time
 import numpy
 
@@ -25,7 +25,7 @@ class ImageThread(QtC.QThread):
             try:
                 self.camHand.cam.stop_acquisition()
                 break
-            except genicam.genapi.AccessException:
+            except genapi.AccessException or gentl.IoException:
                 retry = retry + 1
                 time.sleep(0.1)
 
@@ -113,7 +113,6 @@ class GUI(QtW.QMainWindow):
         self.acquiringG = QtW.QPushButton()
         self.previewG = QtW.QPushButton()
         self.savingG = QtW.QPushButton()
-
 
         self.screen = Screen()
         self.pixform = None
@@ -446,13 +445,13 @@ class GUI(QtW.QMainWindow):
                 try:
                     self.camHand.setProperty("PixelFormat", 'Mono8')
                     self.updateDeviceInfo()
-                except genicam.genapi.LogicalErrorException:
+                except genapi.LogicalErrorException:
                     pass
             else:
                 try:
                     self.camHand.setProperty("PixelFormat", 'BayerRG8')
                     self.updateDeviceInfo()
-                except genicam.genapi.LogicalErrorException:
+                except genapi.LogicalErrorException:
                     pass
 
     def toggleThersh(self):
@@ -578,7 +577,7 @@ class GUI(QtW.QMainWindow):
             self.usedevG.setChecked(False)
             self.toggleCurrDevice()
         self.camHand.harvester.reset()
-        self.camHand.save()
+        #self.camHand.save()
         self.camHand.closeerrlog()
         e.accept()
 

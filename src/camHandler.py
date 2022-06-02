@@ -41,7 +41,7 @@ class CamHandler:
 
         self.harvester = Harvester()
         self.harvester.add_file("C:\\Users\\Paavo\\Documents\\ADENN2021\\MATRIX VISION\\bin\\x64\\mvGenTLProducer.cti")
-        self.load()
+        #self.load()
         self.openerrlog()
 
     def load(self):
@@ -113,7 +113,10 @@ class CamHandler:
     def openerrlog(self):
         if not os.path.exists(os.path.join(os.getcwd(), 'logs')):
             os.mkdir('logs')
-        self.logfname = "logs/CamHandlerERRORLog_%s.txt" % datetime.datetime.now().strftime("%Y-%m-%d_%H;%M;%S")
+        string = datetime.datetime.now().strftime("%Y-%m-%d_%H;%M;%S")
+        if os.path.exists("logs/CamHandlerERRORLog_%s.txt" % string):
+            string = string + "p2"
+        self.logfname = "logs/CamHandlerERRORLog_%s.txt" % string
         self.errlog = open(self.logfname, 'w')
 
     def closeerrlog(self):
@@ -163,16 +166,17 @@ class CamHandler:
         if self.cam.is_acquiring():
             try:
                 buffer = self.cam.fetch_buffer(timeout=0.1)
-                buffimag = buffer.payload.components[0]
-                tstamp = buffer.timestamp
-                if not self.sync:
-                    self.synctimestamp(tstamp)
-                syststamp = self.getsystimestamp(tstamp)
-                arr = numpy.ndarray.copy(buffimag.data.reshape(buffimag.height, buffimag.width))
-                if self.camprops.PixelFormat.value == colorforms[0]:  # Is Bayer RG8
-                    arr = cv.cvtColor(arr, cv.COLOR_BayerRGGB2RGB)
-                buffer.queue()
-                return arr, syststamp
+                if len(buffer.payload.components) > 0:
+                    buffimag = buffer.payload.components[0]
+                    tstamp = buffer.timestamp
+                    if not self.sync:
+                        self.synctimestamp(tstamp)
+                    syststamp = self.getsystimestamp(tstamp)
+                    arr = numpy.ndarray.copy(buffimag.data.reshape(buffimag.height, buffimag.width))
+                    if self.camprops.PixelFormat.value == colorforms[0]:  # Is Bayer RG8
+                        arr = cv.cvtColor(arr, cv.COLOR_BayerRGGB2RGB)
+                    buffer.queue()
+                    return arr, syststamp
             except genicam.gentl.TimeoutException:
                 pass
         return None, 0
