@@ -227,6 +227,21 @@ class CamHandler:
                         ret = self.camprops.get_node(test).max
                     except genicam.genapi.LogicalErrorException:
                         pass
+            elif prop == "FrameDelay":
+                try:
+                    ret = self.camprops.get_node("GevSCFTD").value
+                except genicam.genapi.LogicalErrorException:
+                    pass
+            elif prop == "MinFrameDelay":
+                try:
+                    ret = self.camprops.get_node("GevSCFTD").min
+                except genicam.genapi.LogicalErrorException:
+                    pass
+            elif prop == "MaxFrameDelay":
+                try:
+                    ret = self.camprops.get_node("GevSCFTD").max
+                except genicam.genapi.LogicalErrorException:
+                    pass
             elif prop == "PacketSize":
                 try:
                     val = pcktsizes[0]
@@ -316,6 +331,11 @@ class CamHandler:
                         self.camprops.get_node(test).value = val
                     except genicam.genapi.LogicalErrorException:
                         pass
+            elif prop == "FrameDelay":
+                try:
+                    self.camprops.get_node("GevSCFTD").value = val
+                except genicam.genapi.LogicalErrorException:
+                    pass
             elif prop == "Gain":
                 gainsc = [0.0358, 0.1]
                 ind = 0

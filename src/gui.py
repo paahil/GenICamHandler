@@ -1,3 +1,5 @@
+import traceback
+
 import PyQt5.QtWidgets as QtW
 import PyQt5.QtCore as QtC
 import PyQt5.QtGui as QtG
@@ -21,13 +23,18 @@ class ImageThread(QtC.QThread):
             if arr is not None:
                 self.imageAcquired.emit(arr, tstamp)
         retry = 0
-        while retry < 100:
+        while retry < 10:
             try:
                 self.camHand.cam.stop_acquisition()
                 break
-            except genapi.AccessException or gentl.IoException:
+            except Exception as e:
+                if retry == 0:
+                    self.camHand.logerror("Warning: Exception catched while stopping acquisition, Retrying")
                 retry = retry + 1
-                time.sleep(0.1)
+                time.sleep(0.5)
+                if retry == 10:
+                    self.camHand.logerror("ERROR: Stopping acquisition failed after 100 retries")
+
 
 
 class SaveThread(QtC.QThread):
@@ -162,6 +169,7 @@ class GUI(QtW.QMainWindow):
         self.connproplout = QtW.QGridLayout()
         self.packetSizeG = QtW.QComboBox()
         self.packetIntervalG = QtW.QSpinBox()
+        self.frameDelayG = QtW.QSpinBox()
         self.bufferG = QtW.QSpinBox()
 
         self.createUITop()
@@ -180,6 +188,7 @@ class GUI(QtW.QMainWindow):
         self.mainlout.addWidget(self.connpropset, 4, 1, 1, 1)
         self.mainlout.addWidget(self.infobox, 5, 1, 1, 1)
         self.show()
+        self.handlerpropset.setFixedSize(self.handlerpropset.size())
         self.infobox.setFixedSize(self.infobox.size())
         self.imagepropset.setFixedSize(self.imagepropset.size())
         self.connpropset.setFixedSize(self.connpropset.size())
@@ -300,11 +309,15 @@ class GUI(QtW.QMainWindow):
         self.packetIntervalG.valueChanged.connect(self.changePcktInterval)
         self.connproplout.addWidget(self.packetIntervalG, 2, 2)
 
-        self.connproplout.addWidget(QtW.QLabel("Number of Buffers"), 3, 1)
+        self.connproplout.addWidget(QtW.QLabel("Frame Delay (ticks)"), 3, 1)
+        self.frameDelayG.valueChanged.connect(self.changeFrameDelay)
+        self.connproplout.addWidget(self.frameDelayG, 3, 2)
+
+        self.connproplout.addWidget(QtW.QLabel("Number of Buffers"), 4, 1)
         self.bufferG.setMinimum(1)
         self.bufferG.setMaximum(50)
         self.bufferG.valueChanged.connect(self.changeBuf)
-        self.connproplout.addWidget(self.bufferG, 3, 2)
+        self.connproplout.addWidget(self.bufferG, 4, 2)
         self.connpropset.setLayout(self.connproplout)
 
     def updateInfo(self):
@@ -316,25 +329,34 @@ class GUI(QtW.QMainWindow):
     def updateDeviceInfo(self):
         if self.camHand.camprops is not None:
             cam = self.camHand
-            self.imageWG.setText('Image Width: %d' % cam.getProperty("Width"))
-            self.imageHG.setText('Image Height: %d' % cam.getProperty("Height"))
-            self.maxfpsG.setText('Max FPS: %.2f' % cam.getProperty("MaxFPS"))
-            self.partialWG.setMaximum(cam.getProperty("MaxWidth"))
-            self.partialHG.setMaximum(cam.getProperty("MaxHeight"))
-            self.partialWG.setMinimum(cam.getProperty("MinWidth"))
-            self.partialHG.setMinimum(cam.getProperty("MinHeight"))
-            self.partialoffXG.setMaximum(cam.getProperty("MaxWidth") - cam.partw)
-            self.partialoffYG.setMaximum(cam.getProperty("MaxHeight") - cam.parth)
+            if cam.getProperty("Width") is not None:
+                self.imageWG.setText('Image Width: %d' % cam.getProperty("Width"))
+                self.partialWG.setMaximum(cam.getProperty("MaxWidth"))
+                self.partialWG.setMinimum(cam.getProperty("MinWidth"))
+                self.partialoffXG.setMaximum(cam.getProperty("MaxWidth") - cam.partw)
+            if cam.getProperty("Height") is not None:
+                self.imageHG.setText('Image Height: %d' % cam.getProperty("Height"))
+                self.partialHG.setMaximum(cam.getProperty("MaxHeight"))
+                self.partialHG.setMinimum(cam.getProperty("MinHeight"))
+                self.partialoffYG.setMaximum(cam.getProperty("MaxHeight") - cam.parth)
+            if cam.getProperty("MaxFPS") is not None:
+                self.maxfpsG.setText('Max FPS: %.2f' % cam.getProperty("MaxFPS"))
             self.partialHG.setValue(self.camHand.parth)
             self.partialWG.setValue(self.camHand.partw)
             self.partialoffXG.setValue(self.camHand.offsetx)
             self.partialoffYG.setValue(self.camHand.offsety)
             self.updatePreviewRect()
-            self.gainG.setMaximum(cam.getProperty("MaxGain"))
-            self.gainG.setValue(cam.getProperty("Gain"))
-            self.exposureG.setMaximum(cam.getProperty("MaxExposureTime"))
-            self.exposureG.setValue(cam.getProperty("ExposureTime"))
-            self.exposureG.setMinimum(cam.getProperty("MinExposureTime"))
+            if cam.getProperty("Gain") is not None:
+                self.gainG.blockSignals(True)
+                self.gainG.setMaximum(cam.getProperty("MaxGain"))
+                self.gainG.setValue(cam.getProperty("Gain"))
+                self.gainG.blockSignals(False)
+            if cam.getProperty("ExposureTime") is not None:
+                self.exposureG.blockSignals(True)
+                self.exposureG.setMaximum(cam.getProperty("MaxExposureTime"))
+                self.exposureG.setMinimum(cam.getProperty("MinExposureTime"))
+                self.exposureG.setValue(cam.getProperty("ExposureTime"))
+                self.exposureG.blockSignals(False)
             pixform = cam.getProperty("PixelFormat")
             if pixform == 'BayerRG8':
                 self.formatLG.setText('RGB')
@@ -342,10 +364,23 @@ class GUI(QtW.QMainWindow):
                 self.formatLG.setText('Monochrome')
             else:
                 self.formatLG.setText('Unknown')
-            self.packetIntervalG.setMinimum(cam.getProperty("MinPacketInterval"))
-            self.packetIntervalG.setMaximum(cam.getProperty("MaxPacketInterval"))
-            self.packetIntervalG.setValue(cam.getProperty("PacketInterval"))
-            self.packetSizeG.setCurrentIndex(cam.getProperty("PacketSize"))
+            if cam.getProperty("PacketInterval") is not None:
+                self.packetIntervalG.blockSignals(True)
+                self.packetIntervalG.setMinimum(cam.getProperty("MinPacketInterval"))
+                self.packetIntervalG.setMaximum(cam.getProperty("MaxPacketInterval"))
+                self.packetIntervalG.setValue(cam.getProperty("PacketInterval"))
+                self.packetIntervalG.blockSignals(False)
+            if cam.getProperty("PacketSize") is not None:
+                self.packetSizeG.setCurrentIndex(cam.getProperty("PacketSize"))
+            if cam.getProperty("FrameDelay") is not None:
+                self.frameDelayG.blockSignals(True)
+                self.frameDelayG.setMaximum(cam.getProperty("MaxFrameDelay"))
+                self.frameDelayG.setMinimum(cam.getProperty("MinFrameDelay"))
+                self.frameDelayG.setValue(cam.getProperty("FrameDelay"))
+                self.frameDelayG.blockSignals(False)
+                self.frameDelayG.setEnabled(True)
+            else:
+                self.frameDelayG.setEnabled(False)
         else:
             self.connpropset.setEnabled(False)
             self.imagepropset.setEnabled(False)
@@ -517,6 +552,9 @@ class GUI(QtW.QMainWindow):
 
     def changeBint(self):
         self.camHand.thrsh = self.bint.value()
+
+    def changeFrameDelay(self):
+        self.camHand.setProperty("FrameDelay", self.frameDelayG.value())
 
     def updatePreviewRect(self):
         x = self.partialoffXG.value()
