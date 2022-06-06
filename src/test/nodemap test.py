@@ -12,7 +12,9 @@ def main():
         cam = h.create_image_acquirer(0)
         camprops = cam.remote_device.node_map
         print(dir(camprops))
-        print(camprops.get_node("GevTimestampTickFrequency").value)
+        print(camprops.get_node("AcquisitionFrameRateEnable").value)
+        #camprops.get_node("AcquisitionFrameRateEnable").value = "Yes"
+        #print(dir(camprops.get_node("ResultingFrameRateAbs")))
         #print(dir(camprops.LoadParameters))
         #print(dir(camprops.get_node("PacketSize")))
 

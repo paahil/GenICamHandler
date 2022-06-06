@@ -24,11 +24,13 @@ class CamHandler:
         self.parth = 256
         self.offsetx = 900
         self.offsety = 900
+        self.fpslimit = 1
         self.defH = 0
         self.defW = 0
         self.defOffX = 0
         self.defOffY = 0
 
+        self.limit = False
         self.partial = False
         self.triggering = False
         self.acquire = False
@@ -102,11 +104,14 @@ class CamHandler:
             try:
                 self.camprops.get_node("AutoGain").value = 'OFF'
                 self.camprops.get_node("Binning").value = 'OFF'
+                self.camprops.get_node("AutoFrameRate").value = 'OFF'
             except genicam.genapi.LogicalErrorException:
                 try:
                     self.camprops.get_node("GainAuto").value = "Off"
                     self.camprops.get_node("ExposureAuto").value = "Off"
                     self.camprops.get_node("BalanceWhiteAuto").value = "Off"
+                    self.camprops.get_node("AcquisitionFrameRateEnable").value = True
+                    self.setProperty("FPS", self.getProperty("MaxFPS"))
                 except genicam.genapi.LogicalErrorException:
                     pass
 
@@ -130,7 +135,9 @@ class CamHandler:
 
     def changeCam(self, ind):
         if self.cam is not None:
-            self.cam.stop_acquisition()
+            self.acquire = False
+            while self.cam.is_acquiring():
+                time.sleep(0.01)
             self.saveCameraProperties()
             self.cam.destroy()
             self.cam = None
@@ -202,10 +209,30 @@ class CamHandler:
                 ret = self.camprops.get_node("OffsetY").value
             elif prop == "PixelFormat":
                 ret = self.camprops.get_node("PixelFormat").value
-            elif prop == "MaxFPS":
+            elif prop == "FPS":
                 for test in ["FrameRate", "ResultingFrameRateAbs"]:
                     try:
                         ret = self.camprops.get_node(test).value
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+            elif prop == "MaxFPS":
+                for test in ["FrameRate", "ResultingFrameRateAbs"]:
+                    try:
+                        if test == "ResultingFrameRateAbs":
+                            self.camprops.get_node("AcquisitionFrameRateEnable").value = False
+                            ret = self.camprops.get_node(test).value
+                            self.camprops.get_node("AcquisitionFrameRateEnable").value = True
+                        else:
+                            ret = self.camprops.get_node(test).max
+
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        pass
+            elif prop == "MinFPS":
+                for test in ["FrameRate", "AcquisitionFrameRateAbs"]:
+                    try:
+                        ret = self.camprops.get_node(test).min
                         break
                     except genicam.genapi.LogicalErrorException:
                         pass
@@ -353,7 +380,22 @@ class CamHandler:
                         break
                     except genicam.genapi.LogicalErrorException:
                         pass
+            elif prop == "FPS":
+                for test in ["FrameRate", "AcquisitionFrameRateAbs"]:
+                    try:
+                        self.camprops.get_node(test).value = val
+                        break
+                    except genicam.genapi.LogicalErrorException:
+                        pass
 
+    def toggleFPSLimit(self):
+        if self.cam is not None:
+            if self.limit:
+                self.setProperty("FPS", self.getProperty("MaxFPS"))
+                self.limit = False
+            else:
+                self.setProperty("FPS", self.fpslimit)
+                self.limit = True
 
     def togglePartial(self):
         if self.partial:

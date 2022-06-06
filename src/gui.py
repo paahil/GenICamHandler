@@ -33,7 +33,7 @@ class ImageThread(QtC.QThread):
                 retry = retry + 1
                 time.sleep(0.5)
                 if retry == 10:
-                    self.camHand.logerror("ERROR: Stopping acquisition failed after 100 retries")
+                    self.camHand.logerror("ERROR: Stopping acquisition failed after 10 retries")
 
 
 
@@ -171,6 +171,8 @@ class GUI(QtW.QMainWindow):
         self.packetIntervalG = QtW.QSpinBox()
         self.frameDelayG = QtW.QSpinBox()
         self.bufferG = QtW.QSpinBox()
+        self.limitFPStogG = QtW.QPushButton()
+        self.limitFPSvalG = QtW.QSpinBox()
 
         self.createUITop()
         self.createHandlerProperties()
@@ -318,6 +320,14 @@ class GUI(QtW.QMainWindow):
         self.bufferG.setMaximum(50)
         self.bufferG.valueChanged.connect(self.changeBuf)
         self.connproplout.addWidget(self.bufferG, 4, 2)
+
+        self.limitFPStogG.setText("Limit FPS")
+        self.limitFPStogG.setStyleSheet("background-color : lightgray")
+        self.limitFPStogG.setCheckable(True)
+        self.limitFPStogG.clicked.connect(self.toggleFPSLimit)
+        self.connproplout.addWidget(self.limitFPStogG, 5, 1)
+        self.limitFPSvalG.valueChanged.connect(self.changeFPSLimit)
+        self.connproplout.addWidget(self.limitFPSvalG, 5, 2)
         self.connpropset.setLayout(self.connproplout)
 
     def updateInfo(self):
@@ -381,6 +391,12 @@ class GUI(QtW.QMainWindow):
                 self.frameDelayG.setEnabled(True)
             else:
                 self.frameDelayG.setEnabled(False)
+            if cam.getProperty("FPS") is not None:
+                self.limitFPSvalG.blockSignals(True)
+                self.limitFPSvalG.setMaximum(int(cam.getProperty("MaxFPS")))
+                self.limitFPSvalG.setMinimum(int(cam.getProperty("MinFPS")))
+                self.limitFPSvalG.setValue(self.camHand.fpslimit)
+                self.limitFPSvalG.blockSignals(False)
         else:
             self.connpropset.setEnabled(False)
             self.imagepropset.setEnabled(False)
@@ -440,6 +456,7 @@ class GUI(QtW.QMainWindow):
                 self.partialG.setEnabled(False)
                 self.usedevG.setEnabled(False)
                 self.connpropset.setEnabled(False)
+                self.limitFPStogG.setEnabled(False)
                 self.pixform = self.camHand.getProperty("PixelFormat")
                 self.framecount = 0
                 self.savecount = 0
@@ -453,6 +470,7 @@ class GUI(QtW.QMainWindow):
                 self.connpropset.setEnabled(True)
                 self.partialG.setEnabled(True)
                 self.usedevG.setEnabled(True)
+                self.limitFPStogG.setEnabled(True)
                 self.imageRet.wait()  # Avoid race conditions
                 self.updateDeviceInfo()
                 self.acquiringG.setStyleSheet("background-color : lightgray")
@@ -542,10 +560,26 @@ class GUI(QtW.QMainWindow):
             self.partialprevG.setStyleSheet("background-color : lightgray")
             self.screen.prev = False
 
+    def toggleFPSLimit(self):
+        if self.limitFPStogG.isChecked():
+            if self.camHand.cam is not None:
+                self.limitFPStogG.setStyleSheet("background-color : lightgreen")
+                self.limitFPSvalG.setEnabled(False)
+                self.camHand.toggleFPSLimit()
+            else:
+                self.limitFPStogG.setChecked(False)
+        else:
+            self.limitFPStogG.setStyleSheet("background-color : lightgray")
+            self.limitFPSvalG.setEnabled(True)
+            self.camHand.toggleFPSLimit()
+
     def setInit(self):
         if self.camHand.savepth is not None:
             self.savepathG.setText(self.camHand.savepth[:-1])
         self.bint.setValue(self.camHand.thrsh)
+
+    def changeFPSLimit(self):
+        self.camHand.fpslimit = self.limitFPSvalG.value()
 
     def changeBuf(self):
         self.camHand.changeBufnum(self.bufferG.value())
