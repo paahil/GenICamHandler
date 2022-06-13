@@ -468,8 +468,8 @@ class CamHandler:
         hour = self.systime0.hour
         min = self.systime0.minute
         sec = self.systime0.second
-        deltaus = tstamp - self.tstamp0
-        deltams = round(deltaus / 1000)
+        deltans = tstamp - self.tstamp0
+        deltams = round(deltans / 1000000)
         ms = round(self.systime0.microsecond / 1000) + deltams
         if ms >= 1000:
             sec = sec + math.floor(ms / 1000)
