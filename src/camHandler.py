@@ -42,7 +42,7 @@ class CamHandler:
         self.sync = False
 
         self.harvester = Harvester()
-        self.harvester.add_file("C:\\Users\\Paavo\\Documents\\ADENN2021\\MATRIX VISION\\bin\\x64\\mvGenTLProducer.cti")
+        self.harvester.add_file("C:\\Program Files\\MATRIX VISION\\mvIMPACT Acquire\\bin\\x64\\mvGenTLProducer.cti")
         #self.load()
         self.openerrlog()
 

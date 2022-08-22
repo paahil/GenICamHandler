@@ -395,6 +395,8 @@ class GUI(QtW.QMainWindow):
                 self.limitFPSvalG.blockSignals(True)
                 self.limitFPSvalG.setMaximum(int(cam.getProperty("MaxFPS")))
                 self.limitFPSvalG.setMinimum(int(cam.getProperty("MinFPS")))
+                if not cam.limit:
+                    cam.setProperty("FPS", cam.getProperty("MaxFPS"))
                 self.limitFPSvalG.setValue(self.camHand.fpslimit)
                 self.limitFPSvalG.blockSignals(False)
         else:
@@ -606,22 +608,18 @@ class GUI(QtW.QMainWindow):
     def changePartialWidth(self):
         self.camHand.partw = self.partialWG.value()
         self.updatePreviewRect()
-        self.updateDeviceInfo()
 
     def changePartialHeight(self):
         self.camHand.parth = self.partialHG.value()
         self.updatePreviewRect()
-        self.updateDeviceInfo()
-
+        
     def changePartialOffsetX(self):
         self.camHand.offsetx = self.partialoffXG.value()
         self.updatePreviewRect()
-        self.updateDeviceInfo()
 
     def changePartialOffsetY(self):
         self.camHand.offsety = self.partialoffYG.value()
         self.updatePreviewRect()
-        self.updateDeviceInfo()
 
     def changePcktSize(self):
         ind = self.packetSizeG.currentIndex()
