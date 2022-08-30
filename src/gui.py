@@ -9,64 +9,78 @@ import time
 import numpy
 
 
+# Class for image acquisition thread, based on QThread
 class ImageThread(QtC.QThread):
+    # Set a signal to be sent if acquisition is successful
+    # The signal contains the image and timestamp used for further processing
     imageAcquired = QtC.pyqtSignal(numpy.ndarray, str)
 
-    def __init__(self, gui):
-        super().__init__()
-        self.camHand = gui
+    # Initialization method
+    # input: handler, programs camHandler object
+    def __init__(self, handler):
+        super().__init__()  # Init the QThread
+        self.camHand = handler  # Set the thread camHandler to match the programs
 
+    # Method defining the runtime behaviour
     def run(self):
-        self.camHand.cam.start_acquisition()
-        while self.camHand.acquire:
-            arr, tstamp = self.camHand.acquireImag()
-            if arr is not None:
+        self.camHand.cam.start_acquisition()  # Signal the device to start acquiring images
+        while self.camHand.acquire:  # Loop acquisition as long as the camHandler defines
+            arr, tstamp = self.camHand.acquireImag()  # Use camHandler method to acquire a single frame
+            if arr is not None:  # If the image is valid send the image for further processing
                 self.imageAcquired.emit(arr, tstamp)
+
         retry = 0
-        while retry < 10:
+        while retry < 10:  # Retry the acquisition shut down for up to 10 times
             try:
-                self.camHand.cam.stop_acquisition()
+                self.camHand.cam.stop_acquisition()  # Signal the device to stop image acquisition
                 break
             except Exception as e:
-                if retry == 0:
+                if retry == 0:  # If shut down is not completed on first try log a warning
                     self.camHand.logerror("Warning: Exception catched while stopping acquisition, Retrying")
                 retry = retry + 1
                 time.sleep(0.5)
-                if retry == 10:
+                if retry == 10:  # If shut down is not completed after 10 tries log an error
                     self.camHand.logerror("ERROR: Stopping acquisition failed after 10 retries")
 
 
-
+# Class for image saving thread, based on QThread
 class SaveThread(QtC.QThread):
+    # Set a signal to be sent after an image is saved
     imageSaved = QtC.pyqtSignal()
 
+    # Initialization method
+    # input: handler, programs camHandler object
     def __init__(self, handler):
-        super().__init__()
-        self.camHand = handler
-        self.bw = None
-        self.tstamp = None
+        super().__init__()  # Init the QThread
+        self.camHand = handler  # Set the thread camHandler to match the programs
+        self.bw = None  # Init a variable for current image
+        self.tstamp = None  # Init a variable for current timestamp
 
     def run(self):
-        self.camHand.saveImag(self.bw, self.tstamp)
-        self.imageSaved.emit()
+        self.camHand.saveImag(self.bw, self.tstamp)  # Use the camHandler method to save the image
+        self.imageSaved.emit()  # Emit a signal to notify image saving is completed
 
 
+# Class for screen gui element, based on QLabel
 class Screen(QtW.QLabel):
+
+    # Initialization method
     def __init__(self):
-        super().__init__()
-        self.prev = False
-        self.img = None
-        self.previewrect = QtC.QRect(0, 0, 0, 0)
+        super().__init__()  # Init the QLabel
+        self.img = None  # Init a variable for current image
+        self.previewrect = QtC.QRect(0, 0, 0, 0)  # Init a QRect object to preview partial scan area
+        self.prev = False  # Bool, Is the preview rectangle active?
         self.setStyleSheet("border:1px solid gray")
 
+    # Method that describes Screen object drawing behaviour
     def paintEvent(self, event):
-        if self.img is not None:
+        if self.img is not None:  # If the image is valid draw it on the screen
             size = self.size()
             painter = QtG.QPainter(self)
             scimg = self.img.scaled(size.width() - 2, size.height() - 2, QtC.Qt.AspectRatioMode.KeepAspectRatio)
             point = QtC.QPoint((size.width()-scimg.width())/2, (size.height()-scimg.height())/2)
             painter.drawImage(point, scimg)
-            if self.prev:
+            if self.prev:  # If partial scan preview is enabled draw the preview rectangle on the screen
                 trans = QtG.QTransform()
                 trans.translate(point.x(), point.y())
                 trans.scale(scimg.width()/self.img.width(), scimg.height()/self.img.height())
@@ -74,32 +88,37 @@ class Screen(QtW.QLabel):
                 painter.setTransform(trans)
                 painter.drawRect(self.previewrect)
 
+    # Method for setting a new image as the current one
     def setImage(self, qimg):
         self.img = qimg
-        self.repaint()
+        self.repaint()  # Calling a repaint to update the graphics on screen
 
 
+# Class for the main GUI, based on QMainWindow
 class GUI(QtW.QMainWindow):
 
+    # Initialization method
     def __init__(self):
-        super().__init__()
+        super().__init__()  # Init the QMainWindow
         self.setCentralWidget(QtW.QWidget())  # QMainWindow must have a centralWidget to be able to add layouts
-        self.mainlout = QtW.QGridLayout()
+        self.mainlout = QtW.QGridLayout()  # Init the main layout as a grid
         self.centralWidget().setLayout(self.mainlout)
         self.setWindowTitle('GenICam Handler v1.1')
         QtW.QApplication.setStyle(QtW.QStyleFactory.create('Windows'))
 
         savethrnum = 6  # Number of threads to be used in saving of images
+        # Timer variables and image counter for FPS counter
         self.start = 0
         self.stop = 1
         self.drawimagcount = 0
-        self.sstart = 0
-        self.sstop = 1
+
+        # Variables for storing the default image size parameters
         self.defW = 0
         self.defH = 0
         self.defOffX = 0
         self.defOffY = 0
 
+        # Create the camHandler object for the program and init imaging and saving threads
         self.camHand = CamHandler()
         self.imageRet = ImageThread(self.camHand)
         self.imageRet.imageAcquired.connect(self.drawImage)
@@ -108,12 +127,14 @@ class GUI(QtW.QMainWindow):
             self.imageSaverList.append(SaveThread(self.camHand))
             self.imageSaverList[i].imageSaved.connect(self.increaseSaved)
 
+        # Create the top layout and GUI elements for top layout controls
         self.toplout = QtW.QHBoxLayout()
         self.deviceListG = QtW.QComboBox()
         self.usedevG = QtW.QPushButton()
         self.updtListG = QtW.QPushButton()
         self.savepathG = QtW.QLineEdit()
 
+        # Create the Handler Properties group GUI elements
         self.handlerpropset = QtW.QGroupBox("Handler Properties")
         self.handlerproplout = QtW.QGridLayout()
         self.triggerG = QtW.QPushButton()
@@ -121,9 +142,10 @@ class GUI(QtW.QMainWindow):
         self.previewG = QtW.QPushButton()
         self.savingG = QtW.QPushButton()
 
+        # Create the screen for image drawing
         self.screen = Screen()
-        self.pixform = None
 
+        # Create and Initialize the Info group GUI elements
         self.infobox = QtW.QGroupBox("Info")
         self.infolout = QtW.QGridLayout()
         self.fps = 0
@@ -148,8 +170,10 @@ class GUI(QtW.QMainWindow):
         self.infolout.addWidget(self.imageHG, 3, 2)
         self.infobox.setLayout(self.infolout)
 
+        # Create Image Properties group GUI elements
         self.imagepropset = QtW.QGroupBox("Image Properties")
         self.imageproplout = QtW.QGridLayout()
+        self.pixform = None
         self.formatG = QtW.QPushButton()
         self.formatLG = QtW.QLabel()
         self.threshG = QtW.QPushButton()
@@ -158,6 +182,8 @@ class GUI(QtW.QMainWindow):
         self.exposureG = QtW.QSpinBox()
         self.partialG = QtW.QPushButton()
         self.partialprevG = QtW.QPushButton()
+
+        # Create the Partial Scan Properties group GUI elements
         self.partialset = QtW.QGroupBox("Partial Scan Properties")
         self.partiallout = QtW.QGridLayout()
         self.partialHG = QtW.QSpinBox()
@@ -165,6 +191,7 @@ class GUI(QtW.QMainWindow):
         self.partialoffYG = QtW.QSpinBox()
         self.partialoffXG = QtW.QSpinBox()
 
+        # Create the Network Properties group GUI elements
         self.connpropset = QtW.QGroupBox("Network Properties")
         self.connproplout = QtW.QGridLayout()
         self.packetSizeG = QtW.QComboBox()
@@ -174,15 +201,18 @@ class GUI(QtW.QMainWindow):
         self.limitFPStogG = QtW.QPushButton()
         self.limitFPSvalG = QtW.QSpinBox()
 
+        # Initialize the rest of the layouts
         self.createUITop()
         self.createHandlerProperties()
         self.createImageProperties()
         self.createNetworkProperties()
 
+        # Load camHandler settings and update GUI elements
         self.setInit()
         self.updateDevicelist()
         self.updateDeviceInfo()
 
+        # Add sub-layouts to the main layout and make the GUI visible
         self.mainlout.addLayout(self.toplout, 1, 1, 1, 2)
         self.mainlout.addWidget(self.handlerpropset, 2, 1, 1, 1)
         self.mainlout.addWidget(self.screen, 2, 2, 6, 1)
@@ -190,6 +220,8 @@ class GUI(QtW.QMainWindow):
         self.mainlout.addWidget(self.connpropset, 4, 1, 1, 1)
         self.mainlout.addWidget(self.infobox, 5, 1, 1, 1)
         self.show()
+
+        # Set fixed sizes for group boxes and resize the window
         self.handlerpropset.setFixedSize(self.handlerpropset.size())
         self.infobox.setFixedSize(self.infobox.size())
         self.imagepropset.setFixedSize(self.imagepropset.size())
@@ -197,6 +229,7 @@ class GUI(QtW.QMainWindow):
         self.resize(1000, 600)
         self.move(0, 0)
 
+    # Method for Initializing the top bar layout
     def createUITop(self):
         savepathL = QtW.QLabel('Storage Folder:')
         self.updtListG.setText('Update List')
@@ -213,6 +246,7 @@ class GUI(QtW.QMainWindow):
         self.toplout.addWidget(savepathL)
         self.toplout.addWidget(self.savepathG, 4)
 
+    # Method for initializing the Handler Properties group box
     def createHandlerProperties(self):
         self.triggerG.setText('Trigger')
         self.triggerG.setCheckable(True)
@@ -240,6 +274,7 @@ class GUI(QtW.QMainWindow):
 
         self.handlerpropset.setLayout(self.handlerproplout)
 
+    # Method for initializing the Image Properties group box
     def createImageProperties(self):
         self.partialG.setText('Enable')
         self.partialG.setCheckable(True)
@@ -299,7 +334,7 @@ class GUI(QtW.QMainWindow):
         self.imageproplout.addWidget(self.partialset, 5, 1, 1, 2)
         self.imagepropset.setLayout(self.imageproplout)
 
-
+    # Method for initializing the Network Properties group box
     def createNetworkProperties(self):
         self.connproplout.addWidget(QtW.QLabel("Packet Size (B)"), 1, 1)
         for i in pcktsizes:
@@ -330,12 +365,14 @@ class GUI(QtW.QMainWindow):
         self.connproplout.addWidget(self.limitFPSvalG, 5, 2)
         self.connpropset.setLayout(self.connproplout)
 
+    # Method for updating Info group elements
     def updateInfo(self):
         self.fpsG.setText('FPS: %.2f' % self.fps)
         self.framecountG.setText('Acquired Frames: %d' % self.framecount)
         self.savecountG.setText('Saved Frames: %d' % self.savecount)
         self.bufferG.setValue(self.camHand.bufnum)
 
+    # Method for updating all device related elements (except device list)
     def updateDeviceInfo(self):
         if self.camHand.camprops is not None:
             cam = self.camHand
@@ -408,6 +445,7 @@ class GUI(QtW.QMainWindow):
             self.formatLG.setText('N/A')
         self.updateInfo()
 
+    # Method for updating the device list
     def updateDevicelist(self):
         self.deviceListG.clear()
         self.camHand.harvester.update()
@@ -419,6 +457,7 @@ class GUI(QtW.QMainWindow):
                 devinf = self.camHand.harvester.device_info_list[i]
                 self.deviceListG.addItem(devinf.vendor + ' ' + devinf.model)
 
+    # Method for toggling the use of the current device in the list
     def toggleCurrDevice(self):
         if self.usedevG.isChecked():
             actdev = self.deviceListG.currentIndex()
@@ -437,7 +476,7 @@ class GUI(QtW.QMainWindow):
             self.usedevG.setStyleSheet("background-color : lightgray")
             self.updateDeviceInfo()
 
-
+    # Method for changing the image save directory
     def changeSaveDirectory(self):
         newdir = self.savepathG.text()
         ret = self.camHand.changeSaveDir(newdir)
@@ -448,6 +487,7 @@ class GUI(QtW.QMainWindow):
             self.savepathG.setStyleSheet("background-color : white")
             self.savingG.setEnabled(True)
 
+    # Control method for toggling the image acquisition
     def toggleImaging(self):
         if self.camHand.cam is not None:
             if self.acquiringG.isChecked():
@@ -480,12 +520,14 @@ class GUI(QtW.QMainWindow):
             self.acquiringG.setChecked(False)
             self.acquiringG.setStyleSheet("background-color : lightgray")
 
+    # Control method for toggling the image preview
     def togglePreview(self):
         if self.previewG.isChecked():
             self.previewG.setStyleSheet("background-color : lightgreen")
         else:
             self.previewG.setStyleSheet("background-color : lightgray")
 
+    # Control method for toggling the image saving
     def toggleSaving(self):
         if self.savingG.isChecked():
             self.savingG.setStyleSheet("background-color : lightgreen")
@@ -494,6 +536,7 @@ class GUI(QtW.QMainWindow):
             self.savingG.setStyleSheet("background-color : lightgray")
             self.camHand.saving = False
 
+    # Control method for switching between pixel formats
     def switchFormat(self):
         if self.camHand.cam is not None:
             if self.camHand.getProperty("PixelFormat") == 'BayerRG8':
@@ -509,6 +552,7 @@ class GUI(QtW.QMainWindow):
                 except genapi.LogicalErrorException:
                     pass
 
+    # Control method for toggling thresholding
     def toggleThersh(self):
         if self.threshG.isChecked():
             self.threshG.setStyleSheet("background-color : lightgreen")
@@ -517,6 +561,7 @@ class GUI(QtW.QMainWindow):
             self.threshG.setStyleSheet("background-color : lightgray")
             self.camHand.filtering = False
 
+    # Control method for toggling the triggered acquisition
     def toggleTrigger(self):
         if self.triggerG.isChecked():
             if self.camHand.cam is not None:
@@ -528,6 +573,7 @@ class GUI(QtW.QMainWindow):
             self.triggerG.setStyleSheet("background-color : lightgray")
             self.camHand.toggleTrigger()
 
+    # Control method for toggling the partial scanning
     def togglePartial(self):
         if self.partialG.isChecked():
             if self.camHand.cam is not None:
@@ -538,8 +584,9 @@ class GUI(QtW.QMainWindow):
                 self.partialoffXG.setEnabled(False)
                 self.partialoffYG.setEnabled(False)
                 self.partialprevG.setChecked(False)
-                self.togglePartialPrev()
-                self.partialprevG.setEnabled(False)
+                if self.partialprevG.isChecked():
+                    self.togglePartialPrev()
+                    self.partialprevG.setEnabled(False)
             else:
                 self.partialG.setChecked(False)
         else:
@@ -551,6 +598,7 @@ class GUI(QtW.QMainWindow):
             self.partialoffYG.setEnabled(True)
             self.partialprevG.setEnabled(True)
 
+    # Control method for toggling partial scan preview rectangle
     def togglePartialPrev(self):
         if self.partialprevG.isChecked():
             if self.camHand.cam is not None:
@@ -562,6 +610,7 @@ class GUI(QtW.QMainWindow):
             self.partialprevG.setStyleSheet("background-color : lightgray")
             self.screen.prev = False
 
+    # Control method for toggling the FPS limiter
     def toggleFPSLimit(self):
         if self.limitFPStogG.isChecked():
             if self.camHand.cam is not None:
@@ -575,23 +624,29 @@ class GUI(QtW.QMainWindow):
             self.limitFPSvalG.setEnabled(True)
             self.camHand.toggleFPSLimit()
 
+    # Method for loading camHand options and updating the responding GUI elements
     def setInit(self):
         if self.camHand.savepth is not None:
             self.savepathG.setText(self.camHand.savepth[:-1])
         self.bint.setValue(self.camHand.thrsh)
 
+    # Method for updating FPS limit variable
     def changeFPSLimit(self):
         self.camHand.fpslimit = self.limitFPSvalG.value()
 
+    # Method for updating number of buffers
     def changeBuf(self):
         self.camHand.changeBufnum(self.bufferG.value())
 
+    # Method for updating the threshold
     def changeBint(self):
         self.camHand.thrsh = self.bint.value()
 
+    # Method for updating frame delay
     def changeFrameDelay(self):
         self.camHand.setProperty("FrameDelay", self.frameDelayG.value())
 
+    # Method for updating the partial scan preview rectangle
     def updatePreviewRect(self):
         x = self.partialoffXG.value()
         y = self.partialoffYG.value()
@@ -599,35 +654,44 @@ class GUI(QtW.QMainWindow):
         h = self.partialHG.value()
         self.screen.previewrect = QtC.QRect(x, y, w, h)
 
+    # Method for updating the exposure time
     def changeExposure(self):
         self.camHand.setProperty("ExposureTime", self.exposureG.value())
 
+    # Method for updating the gain
     def changeGain(self):
         self.camHand.setProperty("Gain", self.gainG.value())
 
+    # Method for updating the partial scan width
     def changePartialWidth(self):
         self.camHand.partw = self.partialWG.value()
         self.updatePreviewRect()
 
+    # Method for updating the partial scan height
     def changePartialHeight(self):
         self.camHand.parth = self.partialHG.value()
         self.updatePreviewRect()
-        
+
+    # Method for updating the partial scan horizontal offset
     def changePartialOffsetX(self):
         self.camHand.offsetx = self.partialoffXG.value()
         self.updatePreviewRect()
 
+    # Method for updating the partial scan vertical offset
     def changePartialOffsetY(self):
         self.camHand.offsety = self.partialoffYG.value()
         self.updatePreviewRect()
 
+    # Method for updating the packet size
     def changePcktSize(self):
         ind = self.packetSizeG.currentIndex()
         self.camHand.setProperty("PacketSize", ind)
 
+    # Method for updating the packet interval
     def changePcktInterval(self):
         self.camHand.setProperty("PacketInterval", self.packetIntervalG.value())
 
+    # Method for polling free saving threads
     def pollThreads(self):
         freethr = -1
         for i in range(len(self.imageSaverList)):
@@ -635,6 +699,7 @@ class GUI(QtW.QMainWindow):
                 freethr = i
         return freethr
 
+    # Method describing the program shutdown behaviour
     def closeEvent(self, e):
         if self.camHand.cam is not None:
             if self.acquiringG.isChecked():
@@ -651,6 +716,8 @@ class GUI(QtW.QMainWindow):
         self.camHand.closeerrlog()
         e.accept()
 
+    # Method for drawing and saving the acquired image
+    # Uses a slot to intercept the signal transmitted by the acquisition thread
     @QtC.pyqtSlot(numpy.ndarray, str)
     def drawImage(self, arr, tstamp):
         self.framecount += 1
@@ -678,6 +745,8 @@ class GUI(QtW.QMainWindow):
         self.updateInfo()
         self.drawimagcount += 1
 
+    # Method to increase the saved image counter
+    # Uses a slot to receive the image saved signal
     @QtC.pyqtSlot()
     def increaseSaved(self):
         self.savecount += 1
