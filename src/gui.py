@@ -176,6 +176,8 @@ class GUI(QtW.QMainWindow):
         self.pixform = None
         self.formatG = QtW.QPushButton()
         self.formatLG = QtW.QLabel()
+        self.rotateG = QtW.QPushButton()
+        self.rotationG = QtW.QComboBox()
         self.threshG = QtW.QPushButton()
         self.bint = QtW.QSpinBox()
         self.gainG = QtW.QDoubleSpinBox()
@@ -281,12 +283,13 @@ class GUI(QtW.QMainWindow):
         self.partialG.setStyleSheet("background-color : lightgray")
         self.partialG.clicked.connect(self.togglePartial)
         self.partiallout.addWidget(self.partialG, 1, 1)
+
         self.partialprevG.setText('Preview')
         self.partialprevG.setCheckable(True)
         self.partialprevG.setStyleSheet("background-color : lightgray")
-
         self.partiallout.addWidget(self.partialprevG, 1, 2)
         self.partialprevG.clicked.connect(self.togglePartialPrev)
+
         self.partiallout.addWidget(QtW.QLabel("Width"), 2, 1)
         self.partialWG.setMinimum(2)
         self.partialWG.setSingleStep(2)
@@ -322,16 +325,26 @@ class GUI(QtW.QMainWindow):
         self.imageproplout.addWidget(self.threshG, 2, 1)
         self.imageproplout.addWidget(self.bint, 2, 2)
 
-        self.imageproplout.addWidget(QtW.QLabel("Gain (dB)"), 3, 1)
+        self.rotateG.setText('Rotation')
+        self.rotateG.setStyleSheet("background-color : lightgray")
+        self.rotateG.clicked.connect(self.toggleRotation)
+        self.rotationG.addItem("90")
+        self.rotationG.addItem("180")
+        self.rotationG.addItem("270")
+        self.rotationG.currentIndexChanged.connect(self.changeRotation)
+        self.imageproplout.addWidget(self.rotateG, 3, 1)
+        self.imageproplout.addWidget(self.rotationG, 3, 2)
+
+        self.imageproplout.addWidget(QtW.QLabel("Gain (dB)"), 4, 1)
         self.gainG.setSingleStep(0.1)
         self.gainG.valueChanged.connect(self.changeGain)
-        self.imageproplout.addWidget(self.gainG, 3, 2)
+        self.imageproplout.addWidget(self.gainG, 4, 2)
 
-        self.imageproplout.addWidget(QtW.QLabel("Exposure Time (µs)"), 4, 1)
+        self.imageproplout.addWidget(QtW.QLabel("Exposure Time (µs)"), 5, 1)
         self.exposureG.valueChanged.connect(self.changeExposure)
-        self.imageproplout.addWidget(self.exposureG, 4, 2)
+        self.imageproplout.addWidget(self.exposureG, 5, 2)
 
-        self.imageproplout.addWidget(self.partialset, 5, 1, 1, 2)
+        self.imageproplout.addWidget(self.partialset, 6, 1, 1, 2)
         self.imagepropset.setLayout(self.imageproplout)
 
     # Method for initializing the Network Properties group box
@@ -624,11 +637,24 @@ class GUI(QtW.QMainWindow):
             self.limitFPSvalG.setEnabled(True)
             self.camHand.toggleFPSLimit()
 
+    # Method for toggling image rotation
+    def toggleRotation(self):
+        if self.rotateG.isChecked():
+            if self.camHand.cam is not None:
+                self.rotateG.setStyleSheet("background-color : lightgreen")
+                self.camHand.rotate = True
+        else:
+            self.rotateG.setStyleSheet("background-color : lightgray")
+
     # Method for loading camHand options and updating the responding GUI elements
     def setInit(self):
         if self.camHand.savepth is not None:
             self.savepathG.setText(self.camHand.savepth[:-1])
         self.bint.setValue(self.camHand.thrsh)
+
+    # Method for updating the correct image rotation angle
+    def changeRotation(self):
+        self.camHand.rotation = (self.rotationG.currentIndex() + 1) * 90
 
     # Method for updating FPS limit variable
     def changeFPSLimit(self):

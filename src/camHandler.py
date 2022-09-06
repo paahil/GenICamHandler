@@ -34,6 +34,7 @@ class CamHandler:
         self.defW = 0  # Variable for saving the original width (for toggling partial scan off)
         self.defOffX = 0  # Variable for saving the original horizontal offset (for toggling partial scan off)
         self.defOffY = 0  # Variable for saving the original vertical offset (for toggling partial scan off)
+        self.rotation = 90  # Variable for saving the rotation angle (must be 90, 180 or 270)
 
         # Boolean variables for toggle switches
         self.limit = False  # Is the FPS limiter enabled?
@@ -43,6 +44,7 @@ class CamHandler:
         self.filtering = False  # Is image filtering (thresholding) enabled?
         self.color = False  # Is the device using color format (BAYERNRG8)
         self.saving = False  # Is image storing enabled?
+        self.rotate = False  # Is image rotation enabled?
 
         # Variables for timestamp usage
         self.systime0 = None  # Variable for system timestamp acquired with the first frame
@@ -473,12 +475,25 @@ class CamHandler:
             self.bufnum = val
             self.cam.num_buffers = self.bufnum
 
+    # Method for rotating images
+    # input: frame, image to be rotated
+    # return: frame, rotated image
+    def rotateImag(self, frame):
+        if self.rotation == 90:
+            frame = cv.rotate(frame, cv.cv.ROTATE_90_CLOCKWISE)
+        elif self.rotation == 180:
+            frame = cv.rotate(frame, cv.cv.ROTATE_180)
+        else:
+            frame = cv.rotate(frame, cv.cv.ROTATE_90_COUNTERCLOCKWISE)
+        return frame
     # Method for filtering the image (threshold)
     # input: frame, image frame to be filtered
     # return: frame, filtered image frame (if filtering is toggled off returns the input)
     def filtImag(self, frame):
         if self.filtering:
             frame = cv.threshold(frame, self.thrsh, 255, cv.THRESH_TOZERO)[1]  # Threshold the image
+        if self.rotate:
+            frame = self.rotateImag(frame)
         return frame
 
     # Method for saving a image
